@@ -1,5 +1,9 @@
-import { Lock, Unlock, ShieldAlert } from "lucide-react"
+"use client"
+
+import { useState } from "react"
+import { Lock, Unlock, ShieldAlert, Key } from "lucide-react"
 import type { NostrEvent } from "../types/nostr"
+import { decryptContent } from "@/lib/crypto/encryption"
 
 interface EventCardProps {
   event: NostrEvent
@@ -7,7 +11,11 @@ interface EventCardProps {
   decryptionFailed?: boolean
 }
 
-export function EventCard({ event, decryptedContent, decryptionFailed }: EventCardProps) {
+export function EventCard({ event, decryptedContent: initialDecryptedContent, decryptionFailed }: EventCardProps) {
+  const [decryptKey, setDecryptKey] = useState("")
+  const [decryptedContent, setDecryptedContent] = useState(initialDecryptedContent)
+  const [isDecrypting, setIsDecrypting] = useState(false)
+  const [decryptError, setDecryptError] = useState<string | null>(null)
   const isEncrypted = event.kind === 4
   const formattedDate = new Date(event.created_at * 1000).toLocaleString(undefined, {
     month: "short",
@@ -19,6 +27,24 @@ export function EventCard({ event, decryptedContent, decryptionFailed }: EventCa
 
   // Shorten pubkey
   const shortPubkey = `${event.pubkey.slice(0, 8)}...`
+
+  const handleDecrypt = async () => {
+    if (!decryptKey.trim()) return
+
+    setIsDecrypting(true)
+    setDecryptError(null)
+
+    try {
+      const decrypted = await decryptContent(event.content, decryptKey)
+      setDecryptedContent(decrypted)
+      setDecryptKey("") // Clear the key input
+    } catch (error) {
+      setDecryptError("Invalid key or corrupted data")
+      console.error("[Nostec] Decryption failed:", error)
+    } finally {
+      setIsDecrypting(false)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm transition-all hover:shadow-md md:p-5">
@@ -55,17 +81,36 @@ export function EventCard({ event, decryptedContent, decryptionFailed }: EventCa
                 <p>{decryptedContent}</p>
               </>
             ) : (
-              <div className="flex items-center gap-2 text-muted-foreground italic">
-                {decryptionFailed ? (
-                  <>
-                    <ShieldAlert className="h-4 w-4" />
-                    <span>Encrypted (cannot decrypt with current passphrase)</span>
-                  </>
-                ) : (
-                  <>
-                    <Lock className="h-4 w-4" />
-                    <span>Encrypted content</span>
-                  </>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <Lock className="h-4 w-4" />
+                  <span>Encrypted content - enter key to decrypt</span>
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <input
+                      type="text"
+                      value={decryptKey}
+                      onChange={(e) => setDecryptKey(e.target.value)}
+                      placeholder="Paste decryption key..."
+                      className="w-full rounded-lg border bg-background pl-10 pr-4 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none"
+                      disabled={isDecrypting}
+                    />
+                  </div>
+                  <button
+                    onClick={handleDecrypt}
+                    disabled={!decryptKey.trim() || isDecrypting}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isDecrypting ? "Decrypting..." : "Decrypt"}
+                  </button>
+                </div>
+                {decryptError && (
+                  <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
+                    <ShieldAlert className="h-3.5 w-3.5" />
+                    {decryptError}
+                  </div>
                 )}
               </div>
             )}

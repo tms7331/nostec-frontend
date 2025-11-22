@@ -7,24 +7,23 @@ import { Lock, Unlock, Send } from "lucide-react"
 interface PostFormProps {
   onSubmit: (content: string, encrypted: boolean) => void
   connected: boolean
-  passphrase: string
   isSubmitting?: boolean
 }
 
-export function PostForm({ onSubmit, connected, passphrase, isSubmitting = false }: PostFormProps) {
+export function PostForm({ onSubmit, connected, isSubmitting = false }: PostFormProps) {
   const [content, setContent] = useState("")
   const [encrypt, setEncrypt] = useState(false)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!content.trim()) return
-    if (encrypt && !passphrase) return
 
     onSubmit(content, encrypt)
     setContent("")
+    setEncrypt(false) // Reset encrypt checkbox after submission
   }
 
-  const isSubmitDisabled = !connected || !content.trim() || (encrypt && !passphrase) || isSubmitting
+  const isSubmitDisabled = !connected || !content.trim() || isSubmitting
 
   return (
     <form

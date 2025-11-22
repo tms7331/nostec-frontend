@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Eye, EyeOff, KeyRound, LogOut, MessageSquare } from "lucide-react"
+import { LogOut, MessageSquare } from "lucide-react"
 import { Navbar } from "@/components/navbar" // Import Navbar
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs" // Import Tabs
 import { Button } from "@/components/ui/button"
@@ -12,14 +12,13 @@ import type { NostrEvent } from "@/types/nostr"
 import * as secp256k1 from "@noble/secp256k1"
 import { createSignedEvent } from "@/lib/nostr/crypto"
 import { createPost, getAllPosts } from "@/lib/services/posts"
+import { generateEncryptionKey, encryptContent } from "@/lib/crypto/encryption"
 
 export default function NostrClient() {
   // State
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [loginKey, setLoginKey] = useState("") // New state for login private key input
   const [connected, setConnected] = useState(false)
-  const [passphrase, setPassphrase] = useState("")
-  const [showPassphrase, setShowPassphrase] = useState(false)
   const [pubkey, setPubkey] = useState("")
   const [privkey, setPrivkey] = useState("") // Store the private key
   const [events, setEvents] = useState<NostrEvent[]>([])
@@ -27,6 +26,7 @@ export default function NostrClient() {
   const [decryptionFailures, setDecryptionFailures] = useState<Set<string>>(new Set())
   const [isLoadingPosts, setIsLoadingPosts] = useState(false)
   const [isSubmittingPost, setIsSubmittingPost] = useState(false)
+  const [lastEncryptionKey, setLastEncryptionKey] = useState<string | null>(null)
 
   const createPrivateKey = () => {
     // Generate a random 32-byte private key using browser crypto API
@@ -82,17 +82,12 @@ export default function NostrClient() {
 
   const handleLogout = () => {
     setIsLoggedIn(false)
-    setPassphrase("") // Clear sensitive data on logout
     setPrivkey("")
     setPubkey("")
   }
 
   // Load initial state
   useEffect(() => {
-    // Load stored passphrase
-    const storedPassphrase = localStorage.getItem("nostr-passphrase") || ""
-    setPassphrase(storedPassphrase)
-
     // Simulate connection
     const timer = setTimeout(() => {
       setConnected(true)
@@ -104,32 +99,6 @@ export default function NostrClient() {
     return () => clearTimeout(timer)
   }, [])
 
-  // Handle passphrase changes
-  const handlePassphraseChange = (newPassphrase: string) => {
-    setPassphrase(newPassphrase)
-    localStorage.setItem("nostr-passphrase", newPassphrase)
-  }
-
-  // Effect to re-try decryption when passphrase changes
-  useEffect(() => {
-    const newDecrypted = new Map<string, string>()
-    const newFailures = new Set<string>()
-
-    events.forEach((event) => {
-      if (event.kind === 4) {
-        // This is where actual decryption logic would go
-        // For prototype, we'll simulate successful decryption if passphrase is "secret"
-        if (passphrase === "secret") {
-          newDecrypted.set(event.id, "This is a secret message! (Decrypted successfully)")
-        } else if (passphrase) {
-          newFailures.add(event.id)
-        }
-      }
-    })
-
-    setDecryptedContents(newDecrypted)
-    setDecryptionFailures(newFailures)
-  }, [passphrase, events])
 
   const handlePostSubmit = async (content: string, encrypted: boolean) => {
     if (!privkey) {
@@ -138,15 +107,25 @@ export default function NostrClient() {
     }
 
     setIsSubmittingPost(true)
+    setLastEncryptionKey(null) // Clear previous key
 
     try {
+      let finalContent = content
+      let encryptionKey: string | null = null
+
+      // If encrypted, generate key and encrypt content
+      if (encrypted) {
+        encryptionKey = generateEncryptionKey()
+        finalContent = await encryptContent(content, encryptionKey)
+      }
+
       // Create the unsigned event
       const unsignedEvent = {
         pubkey: pubkey,
         created_at: Math.floor(Date.now() / 1000),
         kind: encrypted ? 4 : 1,
         tags: [] as string[][],
-        content: encrypted ? "Encrypted content placeholder" : content,
+        content: finalContent,
       }
 
       // Sign the event
@@ -157,6 +136,12 @@ export default function NostrClient() {
 
       if (result.success) {
         console.log("[Nostec] Post created successfully:", result.event)
+
+        // Save encryption key to show to user
+        if (encryptionKey) {
+          setLastEncryptionKey(encryptionKey)
+        }
+
         // Reload posts to include the new one
         await loadPosts()
       } else {
@@ -296,39 +281,33 @@ export default function NostrClient() {
                   </div>
                 </header>
 
-                <section className="rounded-xl border bg-card/50 p-5 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] backdrop-blur-sm md:p-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <label htmlFor="passphrase" className="text-sm font-medium text-foreground flex items-center gap-2">
-                      <KeyRound className="h-4 w-4 text-muted-foreground" />
-                      Encryption Passphrase
-                    </label>
-                  </div>
-
-                  <div className="relative group">
-                    <input
-                      id="passphrase"
-                      type={showPassphrase ? "text" : "password"}
-                      value={passphrase}
-                      onChange={(e) => handlePassphraseChange(e.target.value)}
-                      placeholder="Enter shared passphrase..."
-                      className="w-full rounded-lg border bg-background/50 px-4 py-2.5 pl-4 pr-10 text-foreground placeholder:text-muted-foreground/50 focus:border-primary/30 focus:ring-2 focus:ring-primary/10 outline-none transition-all hover:bg-background"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassphrase(!showPassphrase)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Try entering <strong>"secret"</strong> to decrypt the demo message.
-                  </p>
-                </section>
-
                 <section>
-                  <PostForm onSubmit={handlePostSubmit} connected={connected} passphrase={passphrase} isSubmitting={isSubmittingPost} />
+                  <PostForm onSubmit={handlePostSubmit} connected={connected} isSubmitting={isSubmittingPost} />
                 </section>
+
+                {lastEncryptionKey && (
+                  <section className="rounded-xl border border-purple-500/50 bg-purple-50 dark:bg-purple-950/20 p-5 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1">
+                        <h3 className="text-sm font-semibold text-purple-900 dark:text-purple-100 mb-2">
+                          🔐 Encryption Key
+                        </h3>
+                        <p className="text-xs text-purple-700 dark:text-purple-300 mb-3">
+                          Save this key to decrypt your encrypted post. Share it only with people you want to read this message.
+                        </p>
+                        <div className="font-mono text-xs bg-white dark:bg-black p-3 rounded border border-purple-200 dark:border-purple-800 break-all select-all">
+                          {lastEncryptionKey}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setLastEncryptionKey(null)}
+                        className="text-purple-500 hover:text-purple-700 text-sm"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </section>
+                )}
               </>
             )}
           </TabsContent>
