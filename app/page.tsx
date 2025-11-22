@@ -13,6 +13,8 @@ import * as secp256k1 from "@noble/secp256k1"
 import { createSignedEvent } from "@/lib/nostr/crypto"
 import { createPost, getAllPosts } from "@/lib/services/posts"
 import { generateEncryptionKey, encryptContent } from "@/lib/crypto/encryption"
+import { createENSSubname, checkUsernameAvailability } from "@/lib/services/namespace"
+import { fetchENSSubname, type FetchENSResult } from "@/lib/services/ens-fetch"
 
 export default function NostrClient() {
   // State
@@ -27,6 +29,13 @@ export default function NostrClient() {
   const [isLoadingPosts, setIsLoadingPosts] = useState(false)
   const [isSubmittingPost, setIsSubmittingPost] = useState(false)
   const [lastEncryptionKey, setLastEncryptionKey] = useState<string | null>(null)
+  const [desiredUsername, setDesiredUsername] = useState("")
+  const [aztecAddress, setAztecAddress] = useState("")
+  const [ensUsername, setEnsUsername] = useState<string | null>(null)
+  const [isCreatingAccount, setIsCreatingAccount] = useState(false)
+  const [ensFetchName, setEnsFetchName] = useState("")
+  const [ensFetchResult, setEnsFetchResult] = useState<FetchENSResult | null>(null)
+  const [isFetchingENS, setIsFetchingENS] = useState(false)
 
   const createPrivateKey = () => {
     // Generate a random 32-byte private key using browser crypto API
@@ -47,12 +56,54 @@ export default function NostrClient() {
     return { privateKey: privateKeyHex, publicKey: publicKeyHex }
   }
 
-  const handleCreateAccount = () => {
-    const { privateKey, publicKey } = createPrivateKey()
-    console.log("[Nostec] Account created")
-    setPrivkey(privateKey)
-    setPubkey(publicKey)
-    setIsLoggedIn(true)
+  const handleCreateAccount = async () => {
+    if (!desiredUsername.trim()) {
+      alert("Please enter a username")
+      return
+    }
+
+    if (!aztecAddress.trim()) {
+      alert("Please enter your Aztec address")
+      return
+    }
+
+    // Validate username format
+    const isValid = await checkUsernameAvailability(desiredUsername)
+    if (!isValid) {
+      alert("Invalid username. Use 3-20 lowercase letters, numbers, or hyphens.")
+      return
+    }
+
+    setIsCreatingAccount(true)
+
+    try {
+      // Generate keypair
+      const { privateKey, publicKey } = createPrivateKey()
+
+      // Create ENS subname with Aztec address
+      const result = await createENSSubname({
+        label: desiredUsername,
+        aztecAddress: aztecAddress
+      })
+
+      if (result.success) {
+        console.log("[Nostec] Account created with ENS name:", result.ensName)
+        setPrivkey(privateKey)
+        setPubkey(publicKey)
+        setEnsUsername(result.ensName || null)
+        setIsLoggedIn(true)
+        setDesiredUsername("") // Clear inputs
+        setAztecAddress("")
+      } else {
+        console.error("[Nostec] Failed to create ENS subname:", result.error)
+        alert(`Failed to create ENS username: ${result.error}`)
+      }
+    } catch (error) {
+      console.error("[Nostec] Error creating account:", error)
+      alert("An error occurred while creating your account")
+    } finally {
+      setIsCreatingAccount(false)
+    }
   }
 
   const handleLogin = () => {
@@ -172,6 +223,33 @@ export default function NostrClient() {
     }
   }
 
+  const handleFetchENS = async () => {
+    if (!ensFetchName.trim()) {
+      alert("Please enter a username")
+      return
+    }
+
+    setIsFetchingENS(true)
+    setEnsFetchResult(null)
+
+    try {
+      const result = await fetchENSSubname(ensFetchName)
+      setEnsFetchResult(result)
+
+      if (!result.success) {
+        console.error("[Nostec] Failed to fetch ENS:", result.error)
+      }
+    } catch (error) {
+      console.error("[Nostec] Error fetching ENS:", error)
+      setEnsFetchResult({
+        success: false,
+        error: "An error occurred while fetching ENS data"
+      })
+    } finally {
+      setIsFetchingENS(false)
+    }
+  }
+
   return (
     <div className="min-h-screen text-foreground antialiased selection:bg-primary/10 selection:text-primary pb-20 font-sans">
       <AztecBackground /> {/* Add the background component */}
@@ -228,17 +306,43 @@ export default function NostrClient() {
                       <span className="w-full border-t border-border/60" />
                     </div>
                     <div className="relative flex justify-center text-[10px] uppercase tracking-wider font-medium">
-                      <span className="bg-background px-3 text-muted-foreground/60">Or</span>
+                      <span className="bg-background px-3 text-muted-foreground/60">Or Create Account</span>
                     </div>
                   </div>
 
-                  <Button
-                    size="lg"
-                    onClick={handleCreateAccount}
-                    className="w-full h-11 font-medium transition-all shadow-sm hover:shadow-md"
-                  >
-                    Create Account
-                  </Button>
+                  <div className="space-y-3">
+                    <div className="relative group">
+                      <input
+                        type="text"
+                        value={desiredUsername}
+                        onChange={(e) => setDesiredUsername(e.target.value.toLowerCase())}
+                        placeholder="Choose your username"
+                        className="w-full rounded-lg border bg-card px-4 py-3 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:border-ring transition-all hover:border-ring/50"
+                        disabled={isCreatingAccount}
+                      />
+                      <div className="mt-1 text-xs text-muted-foreground text-center">
+                        {desiredUsername && `${desiredUsername}.nostec.eth`}
+                      </div>
+                    </div>
+                    <div className="relative group">
+                      <input
+                        type="text"
+                        value={aztecAddress}
+                        onChange={(e) => setAztecAddress(e.target.value)}
+                        placeholder="Enter your Aztec address"
+                        className="w-full rounded-lg border bg-card px-4 py-3 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:border-ring transition-all hover:border-ring/50"
+                        disabled={isCreatingAccount}
+                      />
+                    </div>
+                    <Button
+                      size="lg"
+                      onClick={handleCreateAccount}
+                      disabled={!desiredUsername.trim() || !aztecAddress.trim() || isCreatingAccount}
+                      className="w-full h-11 font-medium transition-all shadow-sm hover:shadow-md"
+                    >
+                      {isCreatingAccount ? "Creating Account..." : "Create Account"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -261,6 +365,18 @@ export default function NostrClient() {
                   </div>
 
                   <div className="space-y-3">
+                    {ensUsername && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          ENS Username
+                        </label>
+                        <div className="font-mono text-sm text-foreground bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20 border border-blue-200 dark:border-blue-800 flex items-center gap-2 px-3 py-2 rounded-md">
+                          <span className="text-blue-600 dark:text-blue-400">✨</span>
+                          {ensUsername}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-2">
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Public Key
@@ -308,6 +424,62 @@ export default function NostrClient() {
                     </div>
                   </section>
                 )}
+
+                <section className="rounded-xl border border-border/50 bg-card p-5 shadow-sm space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground mb-2">
+                      🔍 Fetch ENS Records
+                    </h3>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Enter a username to fetch records from {"{username}"}.nostec.eth
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={ensFetchName}
+                      onChange={(e) => setEnsFetchName(e.target.value)}
+                      placeholder="Enter username"
+                      className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:border-ring transition-all"
+                      disabled={isFetchingENS}
+                    />
+                    <Button
+                      onClick={handleFetchENS}
+                      disabled={!ensFetchName.trim() || isFetchingENS}
+                      className="font-medium"
+                    >
+                      {isFetchingENS ? "Fetching..." : "Fetch"}
+                    </Button>
+                  </div>
+
+                  {ensFetchResult && (
+                    <div className="mt-4 space-y-3">
+                      {ensFetchResult.success ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                            <span>✓</span>
+                            <span>Found: {ensFetchResult.ensName}</span>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                              Complete Response
+                            </label>
+                            <div className="font-mono text-xs bg-secondary/50 border border-border/50 px-3 py-2 rounded-md break-all overflow-auto max-h-96">
+                              <pre className="whitespace-pre-wrap">{JSON.stringify(ensFetchResult.data, null, 2)}</pre>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+                          <span>✕</span>
+                          <span>Error: {ensFetchResult.error}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
               </>
             )}
           </TabsContent>
