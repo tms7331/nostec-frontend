@@ -8,9 +8,10 @@ interface PostFormProps {
   onSubmit: (content: string, encrypted: boolean) => void
   connected: boolean
   passphrase: string
+  isSubmitting?: boolean
 }
 
-export function PostForm({ onSubmit, connected, passphrase }: PostFormProps) {
+export function PostForm({ onSubmit, connected, passphrase, isSubmitting = false }: PostFormProps) {
   const [content, setContent] = useState("")
   const [encrypt, setEncrypt] = useState(false)
 
@@ -23,7 +24,7 @@ export function PostForm({ onSubmit, connected, passphrase }: PostFormProps) {
     setContent("")
   }
 
-  const isSubmitDisabled = !connected || !content.trim() || (encrypt && !passphrase)
+  const isSubmitDisabled = !connected || !content.trim() || (encrypt && !passphrase) || isSubmitting
 
   return (
     <form
@@ -40,7 +41,7 @@ export function PostForm({ onSubmit, connected, passphrase }: PostFormProps) {
           onChange={(e) => setContent(e.target.value)}
           placeholder="What's on your mind?"
           className="min-h-[120px] w-full resize-none rounded-lg border bg-background p-3 text-foreground placeholder:text-muted-foreground focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
-          disabled={!connected}
+          disabled={!connected || isSubmitting}
         />
         <div className="mt-2 flex justify-end text-xs text-muted-foreground">{content.length} / 2000 characters</div>
       </div>
@@ -69,8 +70,17 @@ export function PostForm({ onSubmit, connected, passphrase }: PostFormProps) {
               : "bg-blue-600 hover:bg-blue-700 active:scale-95 shadow-sm hover:shadow-md"
           }`}
         >
-          <Send className="h-4 w-4" />
-          {connected ? "Submit Post" : "Not Connected"}
+          {isSubmitting ? (
+            <>
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              Submitting...
+            </>
+          ) : (
+            <>
+              <Send className="h-4 w-4" />
+              {connected ? "Submit Post" : "Not Connected"}
+            </>
+          )}
         </button>
       </div>
     </form>

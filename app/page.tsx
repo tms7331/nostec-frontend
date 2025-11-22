@@ -10,6 +10,8 @@ import { EventFeed } from "@/components/event-feed"
 import { AztecBackground } from "@/components/aztec-background" // Import AztecBackground
 import type { NostrEvent } from "@/types/nostr"
 import * as secp256k1 from "@noble/secp256k1"
+import { createSignedEvent } from "@/lib/nostr/crypto"
+import { createPost, getAllPosts } from "@/lib/services/posts"
 
 export default function NostrClient() {
   // State
@@ -23,6 +25,8 @@ export default function NostrClient() {
   const [events, setEvents] = useState<NostrEvent[]>([])
   const [decryptedContents, setDecryptedContents] = useState<Map<string, string>>(new Map())
   const [decryptionFailures, setDecryptionFailures] = useState<Set<string>>(new Set())
+  const [isLoadingPosts, setIsLoadingPosts] = useState(false)
+  const [isSubmittingPost, setIsSubmittingPost] = useState(false)
 
   const createPrivateKey = () => {
     // Generate a random 32-byte private key using browser crypto API
@@ -94,28 +98,8 @@ export default function NostrClient() {
       setConnected(true)
     }, 1000)
 
-    // Add some dummy events for the prototype
-    const dummyEvents: NostrEvent[] = [
-      {
-        id: "1",
-        pubkey: "a1b2c3d4e5f678901234567890abcdef12345678",
-        created_at: Date.now() / 1000 - 3600,
-        kind: 1,
-        tags: [],
-        content: "Hello world! This is a plaintext message on the Nostr network.",
-        sig: "dummy_sig_1",
-      },
-      {
-        id: "2",
-        pubkey: "bb223344556677889900aabbccddeeff11223344",
-        created_at: Date.now() / 1000 - 1800,
-        kind: 4,
-        tags: [],
-        content: "U2FsdGVkX1+...", // Dummy encrypted content
-        sig: "dummy_sig_2",
-      },
-    ]
-    setEvents(dummyEvents)
+    // Load posts from Supabase
+    loadPosts()
 
     return () => clearTimeout(timer)
   }, [])
@@ -147,18 +131,60 @@ export default function NostrClient() {
     setDecryptionFailures(newFailures)
   }, [passphrase, events])
 
-  const handlePostSubmit = (content: string, encrypted: boolean) => {
-    const newEvent: NostrEvent = {
-      id: Math.random().toString(36).substring(7),
-      pubkey: pubkey,
-      created_at: Date.now() / 1000,
-      kind: encrypted ? 4 : 1,
-      tags: [],
-      content: encrypted ? "Encrypted content placeholder" : content,
-      sig: "dummy_sig",
+  const handlePostSubmit = async (content: string, encrypted: boolean) => {
+    if (!privkey) {
+      alert("No private key available. Please create an account or login.")
+      return
     }
 
-    setEvents((prev) => [newEvent, ...prev])
+    setIsSubmittingPost(true)
+
+    try {
+      // Create the unsigned event
+      const unsignedEvent = {
+        pubkey: pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        kind: encrypted ? 4 : 1,
+        tags: [] as string[][],
+        content: encrypted ? "Encrypted content placeholder" : content,
+      }
+
+      // Sign the event
+      const signedEvent = await createSignedEvent(unsignedEvent, privkey)
+
+      // Save to Supabase
+      const result = await createPost(signedEvent)
+
+      if (result.success) {
+        console.log("[Nostec] Post created successfully:", result.event)
+        // Reload posts to include the new one
+        await loadPosts()
+      } else {
+        console.error("[Nostec] Failed to create post:", result.error)
+        alert(`Failed to create post: ${result.error}`)
+      }
+    } catch (error) {
+      console.error("[Nostec] Error submitting post:", error)
+      alert("An error occurred while submitting your post")
+    } finally {
+      setIsSubmittingPost(false)
+    }
+  }
+
+  const loadPosts = async () => {
+    setIsLoadingPosts(true)
+    try {
+      const result = await getAllPosts()
+      if (result.success && result.posts) {
+        setEvents(result.posts)
+      } else {
+        console.error("[Nostec] Failed to load posts:", result.error)
+      }
+    } catch (error) {
+      console.error("[Nostec] Error loading posts:", error)
+    } finally {
+      setIsLoadingPosts(false)
+    }
   }
 
   return (
@@ -301,7 +327,7 @@ export default function NostrClient() {
                 </section>
 
                 <section>
-                  <PostForm onSubmit={handlePostSubmit} connected={connected} passphrase={passphrase} />
+                  <PostForm onSubmit={handlePostSubmit} connected={connected} passphrase={passphrase} isSubmitting={isSubmittingPost} />
                 </section>
               </>
             )}
