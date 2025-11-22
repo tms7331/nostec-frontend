@@ -9,6 +9,7 @@ import { PostForm } from "@/components/post-form"
 import { EventFeed } from "@/components/event-feed"
 import { AztecBackground } from "@/components/aztec-background" // Import AztecBackground
 import type { NostrEvent } from "@/types/nostr"
+import * as secp256k1 from "@noble/secp256k1"
 
 export default function NostrClient() {
   // State
@@ -18,44 +19,72 @@ export default function NostrClient() {
   const [passphrase, setPassphrase] = useState("")
   const [showPassphrase, setShowPassphrase] = useState(false)
   const [pubkey, setPubkey] = useState("")
+  const [privkey, setPrivkey] = useState("") // Store the private key
   const [events, setEvents] = useState<NostrEvent[]>([])
   const [decryptedContents, setDecryptedContents] = useState<Map<string, string>>(new Map())
   const [decryptionFailures, setDecryptionFailures] = useState<Set<string>>(new Set())
 
   const createPrivateKey = () => {
-    console.log("[v0] Creating private key placeholder...")
-    // In the future, this will generate a real Nostr private key (nsec)
-    return "nsec_dummy_placeholder_key_" + Math.random().toString(36).substring(2)
+    // Generate a random 32-byte private key using browser crypto API
+    const privateKeyBytes = new Uint8Array(32)
+    crypto.getRandomValues(privateKeyBytes)
+    const privateKeyHex = Array.from(privateKeyBytes)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+
+    // Derive the public key from the private key
+    const publicKeyBytes = secp256k1.getPublicKey(privateKeyBytes)
+    const publicKeyHex = Array.from(publicKeyBytes)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+      .substring(2) // Remove the '04' prefix for uncompressed key
+
+    console.log("[Nostec] Generated new keypair")
+    return { privateKey: privateKeyHex, publicKey: publicKeyHex }
   }
 
   const handleCreateAccount = () => {
-    const newKey = createPrivateKey()
-    console.log("[v0] Account created with key:", newKey)
+    const { privateKey, publicKey } = createPrivateKey()
+    console.log("[Nostec] Account created")
+    setPrivkey(privateKey)
+    setPubkey(publicKey)
     setIsLoggedIn(true)
   }
 
   const handleLogin = () => {
     if (loginKey.trim()) {
-      console.log("[v0] User logged in with key:", loginKey)
-      setIsLoggedIn(true)
-      setLoginKey("") // Clear input
+      try {
+        // Derive public key from the provided private key
+        const privateKeyBytes = new Uint8Array(
+          loginKey.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || []
+        )
+        const publicKeyBytes = secp256k1.getPublicKey(privateKeyBytes)
+        const publicKeyHex = Array.from(publicKeyBytes)
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('')
+          .substring(2) // Remove the '04' prefix for uncompressed key
+
+        setPrivkey(loginKey)
+        setPubkey(publicKeyHex)
+        setIsLoggedIn(true)
+        setLoginKey("") // Clear input
+        console.log("[Nostec] User logged in")
+      } catch (error) {
+        console.error("[Nostec] Invalid private key:", error)
+        alert("Invalid private key format")
+      }
     }
   }
 
   const handleLogout = () => {
     setIsLoggedIn(false)
-    setPassphrase("") // Optional: clear sensitive data on logout
+    setPassphrase("") // Clear sensitive data on logout
+    setPrivkey("")
+    setPubkey("")
   }
 
   // Load initial state
   useEffect(() => {
-    // Simulate fetching/generating pubkey
-    const storedPubkey = localStorage.getItem("nostr-pubkey") || "a1b2c3d4e5f678901234567890abcdef12345678"
-    if (!localStorage.getItem("nostr-pubkey")) {
-      localStorage.setItem("nostr-pubkey", storedPubkey)
-    }
-    setPubkey(storedPubkey)
-
     // Load stored passphrase
     const storedPassphrase = localStorage.getItem("nostr-passphrase") || ""
     setPassphrase(storedPassphrase)
@@ -166,10 +195,10 @@ export default function NostrClient() {
                   <div className="space-y-3">
                     <div className="relative group">
                       <input
-                        type="password"
+                        type="text"
                         value={loginKey}
                         onChange={(e) => setLoginKey(e.target.value)}
-                        placeholder="Paste your private key (nsec...)"
+                        placeholder="Paste your private key (hex format)"
                         className="w-full rounded-lg border bg-card px-4 py-3 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:border-ring transition-all hover:border-ring/50"
                       />
                     </div>
@@ -203,24 +232,42 @@ export default function NostrClient() {
               </div>
             ) : (
               <>
-                <header className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between pb-6 border-b border-border/40">
-                  <div className="flex flex-col gap-1 text-center md:text-left">
-                    <h1 className="text-2xl font-medium tracking-tight text-foreground sm:text-3xl">Home</h1>
-                    <p className="text-muted-foreground text-base">Manage your keys and secure messages.</p>
-                    <div className="mt-3 font-mono text-xs text-muted-foreground/80 bg-secondary/50 border border-border/50 inline-flex items-center gap-2 px-3 py-1.5 rounded-md self-center md:self-start transition-colors hover:bg-secondary/80 cursor-pointer">
-                      <div className="w-2 h-2 rounded-full bg-green-500/80" />
-                      {pubkey.slice(0, 12)}...{pubkey.slice(-4)}
+                <header className="flex flex-col gap-6 pb-6 border-b border-border/40">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="flex flex-col gap-1 text-center md:text-left">
+                      <h1 className="text-2xl font-medium tracking-tight text-foreground sm:text-3xl">Home</h1>
+                      <p className="text-muted-foreground text-base">Manage your keys and secure messages.</p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleLogout}
+                      className="self-center md:self-start text-muted-foreground hover:text-destructive"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Logout
+                    </Button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Public Key
+                      </label>
+                      <div className="font-mono text-xs text-foreground bg-secondary/50 border border-border/50 flex items-center gap-2 px-3 py-2 rounded-md transition-colors hover:bg-secondary/80 break-all">
+                        {pubkey}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Private Key
+                      </label>
+                      <div className="font-mono text-xs text-foreground bg-secondary/50 border border-border/50 flex items-center gap-2 px-3 py-2 rounded-md transition-colors hover:bg-secondary/80 break-all">
+                        {privkey}
+                      </div>
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleLogout}
-                    className="self-center md:self-start text-muted-foreground hover:text-destructive"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Logout
-                  </Button>
                 </header>
 
                 <section className="rounded-xl border bg-card/50 p-5 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] backdrop-blur-sm md:p-6 space-y-4">
