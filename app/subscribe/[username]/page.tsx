@@ -18,7 +18,7 @@ export default function SubscribePage() {
   const [isLoadingENS, setIsLoadingENS] = useState(true)
   const [aztecAddress, setAztecAddress] = useState<string | null>(null)
 
-  // Obsidian wallet state
+  // Obsidion wallet state
   const [obsidianAccount, setObsidianAccount] = useState<any>(null)
   const [isConnectingWallet, setIsConnectingWallet] = useState(false)
 
@@ -38,10 +38,10 @@ export default function SubscribePage() {
 
         // Extract Aztec address from texts if available
         if (result.success && result.data?.texts) {
-          const aztecAddr = result.data.texts.find(
-            (t: any) => t.key === 'aztecAddress'
-          )?.value
+          // texts is an object, not an array
+          const aztecAddr = result.data.texts.aztec_address || result.data.texts.aztecAddress
           setAztecAddress(aztecAddr || null)
+          console.log('[Nostec] Extracted Aztec address:', aztecAddr)
         }
       } catch (error) {
         console.error('[Nostec] Error loading ENS info:', error)
@@ -66,10 +66,10 @@ export default function SubscribePage() {
       }
       const account = await sdk.connect("obsidion")
       setObsidianAccount(account)
-      console.log("[Obsidian] Connected to wallet:", account.getAddress())
+      console.log("[Obsidion] Connected to wallet:", account.getAddress())
     } catch (error) {
-      console.error("[Obsidian] Failed to connect:", error)
-      alert("Failed to connect to Obsidian wallet. Make sure the wallet is open.")
+      console.error("[Obsidion] Failed to connect:", error)
+      alert("Failed to connect to Obsidion wallet. Make sure the wallet is open.")
     } finally {
       setIsConnectingWallet(false)
     }
@@ -77,7 +77,7 @@ export default function SubscribePage() {
 
   const handleSubscribe = async () => {
     if (!obsidianAccount) {
-      alert("Please connect your Obsidian wallet first")
+      alert("Please connect your Obsidion wallet first")
       return
     }
 
@@ -86,16 +86,58 @@ export default function SubscribePage() {
       return
     }
 
+    // Get nostr pubkey from localStorage
+    const nostrPubkey = localStorage.getItem('nostec_pubkey')
+    if (!nostrPubkey) {
+      alert("No Nostr public key found. Please log in to the main page first.")
+      return
+    }
+
     setIsSubscribing(true)
     setSubscribeResult(null)
 
     try {
       const fromAddress = obsidianAccount.getAddress().toString()
-      const result = await createSubscription(fromAddress, aztecAddress)
+      const result = await createSubscription(fromAddress, nostrPubkey, aztecAddress)
 
       if (result.success) {
         console.log('[Nostec] Subscription created:', result.subscription)
         setSubscribeResult(`Successfully subscribed to ${username}!`)
+      } else {
+        console.error('[Nostec] Failed to create subscription:', result.error)
+        setSubscribeResult(`Failed to subscribe: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('[Nostec] Error creating subscription:', error)
+      setSubscribeResult(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsSubscribing(false)
+    }
+  }
+
+  const handleSubscribeHacky = async () => {
+    if (!aztecAddress) {
+      alert("No Aztec address found for this user")
+      return
+    }
+
+    // Get nostr pubkey from localStorage
+    const nostrPubkey = localStorage.getItem('nostec_pubkey')
+    if (!nostrPubkey) {
+      alert("No Nostr public key found. Please log in to the main page first.")
+      return
+    }
+
+    setIsSubscribing(true)
+    setSubscribeResult(null)
+
+    try {
+      // Use "0x" as a placeholder for from_aztec_key
+      const result = await createSubscription("0x", nostrPubkey, aztecAddress)
+
+      if (result.success) {
+        console.log('[Nostec] Hacky subscription created:', result.subscription)
+        setSubscribeResult(`Successfully subscribed to ${username} (hacky mode)!`)
       } else {
         console.error('[Nostec] Failed to create subscription:', result.error)
         setSubscribeResult(`Failed to subscribe: ${result.error}`)
@@ -159,14 +201,14 @@ export default function SubscribePage() {
             </div>
           </div>
 
-          {/* Obsidian Wallet Section */}
+          {/* Obsidion Wallet Section */}
           <section className="rounded-xl border border-border/50 bg-card p-5 shadow-sm space-y-4">
             <div>
               <h3 className="text-sm font-semibold text-foreground mb-2">
                 🔮 Connect Your Wallet
               </h3>
               <p className="text-xs text-muted-foreground mb-3">
-                Connect your Obsidian wallet to subscribe to this user
+                Connect your Obsidion wallet to subscribe to this user
               </p>
             </div>
 
@@ -176,32 +218,42 @@ export default function SubscribePage() {
                 disabled={isConnectingWallet}
                 className="w-full font-medium"
               >
-                {isConnectingWallet ? "Connecting..." : "Connect Obsidian Wallet"}
+                {isConnectingWallet ? "Connecting..." : "Connect Obsidion Wallet"}
               </Button>
             ) : (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 px-3 py-2 rounded-md">
-                  <span>✓</span>
-                  <span>Connected: {obsidianAccount.getAddress().toString().substring(0, 20)}...</span>
-                </div>
+              <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 px-3 py-2 rounded-md">
+                <span>✓</span>
+                <span>Connected: {obsidianAccount.getAddress().toString().substring(0, 20)}...</span>
+              </div>
+            )}
+          </section>
 
-                <Button
-                  onClick={handleSubscribe}
-                  disabled={isSubscribing || !aztecAddress}
-                  className="w-full font-medium"
-                >
-                  {isSubscribing ? "Subscribing..." : "Subscribe"}
-                </Button>
+          {/* Subscribe Section */}
+          <section className="rounded-xl border border-border/50 bg-card p-5 shadow-sm space-y-4">
+            <Button
+              onClick={handleSubscribe}
+              disabled={isSubscribing || !aztecAddress || !obsidianAccount}
+              className="w-full font-medium"
+            >
+              {isSubscribing ? "Subscribing..." : "Subscribe"}
+            </Button>
 
-                {subscribeResult && (
-                  <div className={`p-3 rounded-md text-sm ${
-                    subscribeResult.includes("Successfully")
-                      ? "bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300"
-                      : "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"
-                  }`}>
-                    {subscribeResult}
-                  </div>
-                )}
+            <Button
+              onClick={handleSubscribeHacky}
+              disabled={isSubscribing || !aztecAddress}
+              variant="outline"
+              className="w-full font-medium"
+            >
+              {isSubscribing ? "Subscribing..." : "Subscribe Hacky"}
+            </Button>
+
+            {subscribeResult && (
+              <div className={`p-3 rounded-md text-sm ${
+                subscribeResult.includes("Successfully")
+                  ? "bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300"
+                  : "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"
+              }`}>
+                {subscribeResult}
               </div>
             )}
           </section>

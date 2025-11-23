@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase/client'
 export interface Subscription {
   id: number
   from_aztec_key: string
+  from_nostr_pubkey: string
   to_aztec_key: string
   created_at: string
 }
@@ -24,6 +25,7 @@ export interface GetSubscriptionsResult {
  */
 export async function createSubscription(
   fromAztecKey: string,
+  fromNostrPubkey: string,
   toAztecKey: string
 ): Promise<CreateSubscriptionResult> {
   try {
@@ -31,6 +33,7 @@ export async function createSubscription(
       .from('subscriptions')
       .insert([{
         from_aztec_key: fromAztecKey,
+        from_nostr_pubkey: fromNostrPubkey,
         to_aztec_key: toAztecKey
       }])
       .select()

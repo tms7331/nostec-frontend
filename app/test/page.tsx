@@ -13,7 +13,7 @@ import { fetchENSSubname, type FetchENSResult } from "@/lib/services/ens-fetch"
 class Counter extends Contract.fromAztec(CounterContract as any) { }
 
 export default function TestPage() {
-    // Obsidian wallet state
+    // Obsidion wallet state
     const [obsidianAccount, setObsidianAccount] = useState<any>(null)
     const [isConnectingWallet, setIsConnectingWallet] = useState(false)
     const [contractAddress, setContractAddress] = useState("")
@@ -29,7 +29,7 @@ export default function TestPage() {
     const [ensFetchResult, setEnsFetchResult] = useState<FetchENSResult | null>(null)
     const [isFetchingENS, setIsFetchingENS] = useState(false)
 
-    // Obsidian wallet handlers
+    // Obsidion wallet handlers
     const handleConnectWallet = async () => {
         setIsConnectingWallet(true)
         try {
@@ -39,10 +39,10 @@ export default function TestPage() {
             }
             const account = await sdk.connect("obsidion")
             setObsidianAccount(account)
-            console.log("[Obsidian] Connected to wallet:", account.getAddress())
+            console.log("[Obsidion] Connected to wallet:", account.getAddress())
         } catch (error) {
-            console.error("[Obsidian] Failed to connect:", error)
-            alert("Failed to connect to Obsidian wallet. Make sure the wallet is open.")
+            console.error("[Obsidion] Failed to connect:", error)
+            alert("Failed to connect to Obsidion wallet. Make sure the wallet is open.")
         } finally {
             setIsConnectingWallet(false)
         }
@@ -50,7 +50,7 @@ export default function TestPage() {
 
     const handleSubmitTransaction = async () => {
         if (!obsidianAccount) {
-            alert("Please connect your Obsidian wallet first")
+            alert("Please connect your Obsidion wallet first")
             return
         }
 
@@ -80,10 +80,10 @@ export default function TestPage() {
             )
 
             const obsidion = obsidianAccount.getAddress()
-            console.log("[Obsidian] Obsidion address:", obsidion)
+            console.log("[Obsidion] Obsidion address:", obsidion)
 
             // Submit the transaction
-            console.log("[Obsidian] Submitting transaction...")
+            console.log("[Obsidion] Submitting transaction...")
             const tx = counter.methods
                 .add_follower_note_nocheck(
                     obsidianAccount.getAddress(),
@@ -102,14 +102,14 @@ export default function TestPage() {
 
             const receipt = await tx.wait({ timeout: 200000 })
 
-            console.log("[Obsidian] Transaction successful:", receipt.txHash)
+            console.log("[Obsidion] Transaction successful:", receipt.txHash)
             setTxResult(`Transaction successful! Hash: ${receipt.txHash.toString()}`)
 
             // Clear form
             setFollowerAmount("")
             setFollowerOwner("")
         } catch (error) {
-            console.error("[Obsidian] Transaction failed:", error)
+            console.error("[Obsidion] Transaction failed:", error)
             setTxResult(`Transaction failed: ${error instanceof Error ? error.message : "Unknown error"}`)
         } finally {
             setIsSubmittingTx(false)
@@ -118,7 +118,7 @@ export default function TestPage() {
 
     const handleGetNostrPubkeys = async () => {
         if (!obsidianAccount) {
-            alert("Please connect your Obsidian wallet first")
+            alert("Please connect your Obsidion wallet first")
             return
         }
 
@@ -144,7 +144,7 @@ export default function TestPage() {
 
             // Call get_nostr_pubkeys offchain using simulate()
             // Pass registerSenders as second parameter to the method call (like balance_of_private in example)
-            console.log("[Obsidian] Fetching nostr pubkeys...")
+            console.log("[Obsidion] Fetching nostr pubkeys...")
             const result = await counter.methods
                 .get_nostr_pubkeys(
                     AztecAddress.fromString(followerOwner),
@@ -154,10 +154,10 @@ export default function TestPage() {
                 )
                 .simulate()
 
-            console.log("[Obsidian] Nostr pubkeys result:", result)
+            console.log("[Obsidion] Nostr pubkeys result:", result)
             setPubkeysResult(`Nostr Pubkeys: ${JSON.stringify(result, null, 2)}`)
         } catch (error) {
-            console.error("[Obsidian] Failed to fetch nostr pubkeys:", error)
+            console.error("[Obsidion] Failed to fetch nostr pubkeys:", error)
             setPubkeysResult(`Error: ${error instanceof Error ? error.message : "Unknown error"}`)
         } finally {
             setIsFetchingPubkeys(false)
@@ -201,19 +201,19 @@ export default function TestPage() {
                         <div className="flex flex-col gap-1 text-center md:text-left">
                             <h1 className="text-2xl font-medium tracking-tight text-foreground sm:text-3xl">Test Functions</h1>
                             <p className="text-muted-foreground text-base">
-                                Test Obsidian wallet integration and ENS functionality
+                                Test Obsidion wallet integration and ENS functionality
                             </p>
                         </div>
                     </header>
 
-                    {/* Obsidian Wallet Section */}
+                    {/* Obsidion Wallet Section */}
                     <section className="rounded-xl border border-border/50 bg-card p-5 shadow-sm space-y-4">
                         <div>
                             <h3 className="text-sm font-semibold text-foreground mb-2">
-                                🔮 Obsidian Wallet - Counter Contract
+                                🔮 Obsidion Wallet - Counter Contract
                             </h3>
                             <p className="text-xs text-muted-foreground mb-3">
-                                Connect to Obsidian wallet and submit transactions to the Counter contract
+                                Connect to Obsidion wallet and submit transactions to the Counter contract
                             </p>
                         </div>
 
@@ -223,7 +223,7 @@ export default function TestPage() {
                                 disabled={isConnectingWallet}
                                 className="w-full font-medium"
                             >
-                                {isConnectingWallet ? "Connecting..." : "Connect Obsidian Wallet"}
+                                {isConnectingWallet ? "Connecting..." : "Connect Obsidion Wallet"}
                             </Button>
                         ) : (
                             <div className="space-y-4">

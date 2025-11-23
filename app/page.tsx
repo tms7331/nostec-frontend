@@ -91,6 +91,13 @@ export default function NostrClient() {
         setIsLoggedIn(true)
         setDesiredUsername("") // Clear inputs
         setAztecAddress("")
+
+        // Store keys in localStorage
+        localStorage.setItem('nostec_privkey', privateKey)
+        localStorage.setItem('nostec_pubkey', publicKey)
+        if (result.ensName) {
+          localStorage.setItem('nostec_ens', result.ensName)
+        }
       } else {
         console.error("[Nostec] Failed to create ENS subname:", result.error)
         alert(`Failed to create ENS username: ${result.error}`)
@@ -122,6 +129,10 @@ export default function NostrClient() {
         setLoginKey("") // Clear input
         console.log("[Nostec] User logged in")
 
+        // Store keys in localStorage
+        localStorage.setItem('nostec_privkey', loginKey)
+        localStorage.setItem('nostec_pubkey', publicKeyHex)
+
         // Try to fetch ENS username from previous posts
         const postsResult = await getPostsByPubkey(publicKeyHex)
         if (postsResult.success && postsResult.posts && postsResult.posts.length > 0) {
@@ -129,6 +140,7 @@ export default function NostrClient() {
           const postWithENS = postsResult.posts.find(post => post.ens_username)
           if (postWithENS?.ens_username) {
             setEnsUsername(postWithENS.ens_username)
+            localStorage.setItem('nostec_ens', postWithENS.ens_username)
             console.log("[Nostec] Found ENS username from previous posts:", postWithENS.ens_username)
           }
         }
@@ -144,6 +156,11 @@ export default function NostrClient() {
     setPrivkey("")
     setPubkey("")
     setEnsUsername(null)
+
+    // Clear localStorage
+    localStorage.removeItem('nostec_privkey')
+    localStorage.removeItem('nostec_pubkey')
+    localStorage.removeItem('nostec_ens')
   }
 
   // Load initial state
@@ -155,6 +172,21 @@ export default function NostrClient() {
 
     // Load posts from Supabase
     loadPosts()
+
+    // Check for stored keys and auto-login
+    const storedPrivkey = localStorage.getItem('nostec_privkey')
+    const storedPubkey = localStorage.getItem('nostec_pubkey')
+    const storedEns = localStorage.getItem('nostec_ens')
+
+    if (storedPrivkey && storedPubkey) {
+      console.log("[Nostec] Found stored keys, auto-logging in")
+      setPrivkey(storedPrivkey)
+      setPubkey(storedPubkey)
+      setIsLoggedIn(true)
+      if (storedEns) {
+        setEnsUsername(storedEns)
+      }
+    }
 
     return () => clearTimeout(timer)
   }, [])
