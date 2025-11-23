@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@nemi-fi/wallet-sdk'],
+  // Add empty turbopack config to acknowledge we're aware of the webpack config
+  turbopack: {},
   webpack: (config) => {
     config.resolve.extensionAlias = {
       '.js': ['.js', '.ts'],
