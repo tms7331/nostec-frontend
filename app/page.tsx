@@ -46,6 +46,8 @@ export default function NostrClient() {
   const [isConnectingWallet, setIsConnectingWallet] = useState(false)
   const [isFetchingPubkeys, setIsFetchingPubkeys] = useState(false)
   const [pubkeysResult, setPubkeysResult] = useState<string | null>(null)
+  const [isFetchingFollowerNotes, setIsFetchingFollowerNotes] = useState(false)
+  const [followerNotesResult, setFollowerNotesResult] = useState<string | null>(null)
 
   const createPrivateKey = () => {
     // Generate a random 32-byte private key using browser crypto API
@@ -389,6 +391,51 @@ export default function NostrClient() {
     }
   }
 
+  const handleViewFollowerNotes = async () => {
+    if (!obsidianAccount) {
+      alert("Please connect your Obsidion wallet first")
+      return
+    }
+
+    if (!userAztecAddress) {
+      alert("No Aztec address found")
+      return
+    }
+
+    setIsFetchingFollowerNotes(true)
+    setFollowerNotesResult(null)
+
+    try {
+      // Hardcoded contract address
+      const contractAddress = "0x1f16073628f6a2740a1e86621db02fa3cf29b8f45a86d0d61d076a956fac8d2d"
+
+      // Connect to the Counter contract
+      const counter = await Counter.at(
+        AztecAddress.fromString(contractAddress),
+        obsidianAccount
+      )
+
+      // Call view_follower_notes offchain using simulate()
+      console.log("[Obsidion] Fetching follower notes for address:", userAztecAddress)
+      const result = await counter.methods
+        .view_follower_notes(
+          AztecAddress.fromString(userAztecAddress),
+          {
+            registerSenders: [obsidianAccount.getAddress()],
+          }
+        )
+        .simulate()
+
+      console.log("[Obsidion] Follower notes result:", result)
+      setFollowerNotesResult(JSON.stringify(result, null, 2))
+    } catch (error) {
+      console.error("[Obsidion] Failed to fetch follower notes:", error)
+      setFollowerNotesResult(`Error: ${error instanceof Error ? error.message : "Unknown error"}`)
+    } finally {
+      setIsFetchingFollowerNotes(false)
+    }
+  }
+
 
   return (
     <div className="min-h-screen text-foreground antialiased selection:bg-primary/10 selection:text-primary pb-20 font-sans">
@@ -568,13 +615,24 @@ export default function NostrClient() {
                         <span>Connected: {obsidianAccount.getAddress().toString().substring(0, 20)}...</span>
                       </div>
 
-                      <Button
-                        onClick={handleGetNostrPubkeys}
-                        disabled={isFetchingPubkeys}
-                        className="w-full font-medium"
-                      >
-                        {isFetchingPubkeys ? "Fetching..." : "Get Nostr Public Keys"}
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleGetNostrPubkeys}
+                          disabled={isFetchingPubkeys}
+                          className="flex-1 font-medium"
+                        >
+                          {isFetchingPubkeys ? "Fetching..." : "View Nostr Keys"}
+                        </Button>
+
+                        <Button
+                          onClick={handleViewFollowerNotes}
+                          disabled={isFetchingFollowerNotes}
+                          variant="outline"
+                          className="flex-1 font-medium"
+                        >
+                          {isFetchingFollowerNotes ? "Fetching..." : "View Follower Notes"}
+                        </Button>
+                      </div>
 
                       {pubkeysResult && (
                         <div className={`p-3 rounded-md text-xs ${
@@ -582,7 +640,19 @@ export default function NostrClient() {
                             ? "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"
                             : "bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300"
                         }`}>
+                          <div className="font-semibold mb-2">Nostr Public Keys:</div>
                           <pre className="whitespace-pre-wrap break-words text-xs">{pubkeysResult}</pre>
+                        </div>
+                      )}
+
+                      {followerNotesResult && (
+                        <div className={`p-3 rounded-md text-xs ${
+                          followerNotesResult.includes("Error")
+                            ? "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"
+                            : "bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300"
+                        }`}>
+                          <div className="font-semibold mb-2">Follower Notes:</div>
+                          <pre className="whitespace-pre-wrap break-words text-xs">{followerNotesResult}</pre>
                         </div>
                       )}
                     </div>
