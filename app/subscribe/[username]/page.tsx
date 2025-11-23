@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useParams } from "next/navigation"
 import { Navbar } from "@/components/navbar"
 import { AztecBackground } from "@/components/aztec-background"
@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button"
 import { fetchENSSubname, type FetchENSResult } from "@/lib/services/ens-fetch"
 import { getObsidianSdk } from "@/lib/obsidian/sdk"
 import { createSubscription } from "@/lib/services/subscriptions"
+import { ZKPassport } from "@zkpassport/sdk"
+import QRCode from "qrcode"
 
 export default function SubscribePage() {
   const params = useParams()
@@ -25,6 +27,12 @@ export default function SubscribePage() {
   // Subscribe state
   const [isSubscribing, setIsSubscribing] = useState(false)
   const [subscribeResult, setSubscribeResult] = useState<string | null>(null)
+
+  // zkPassport state
+  const [zkProofUrl, setZkProofUrl] = useState<string | null>(null)
+  const [zkProofStatus, setZkProofStatus] = useState<string | null>(null)
+  const [zkProofResult, setZkProofResult] = useState<any>(null)
+  const qrCanvasRef = useRef<HTMLCanvasElement>(null)
 
   // Load ENS info on mount
   useEffect(() => {
@@ -154,6 +162,105 @@ export default function SubscribePage() {
     }
   }
 
+  const handleGenerateZkProof = async () => {
+    try {
+      setZkProofStatus("Initializing zkPassport...")
+      console.log('[zkPassport] Initializing SDK...')
+
+      // Initialize zkPassport SDK
+      const zkPassport = new ZKPassport()
+
+      // Create proof request
+      const queryBuilder = await zkPassport.request({
+        name: "Nostec Subscription",
+        logo: "https://nostec.eth/logo.png",
+        purpose: "Verify you are over 18 to subscribe",
+        scope: "age-verification",
+      })
+
+      console.log('[zkPassport] Creating proof request...')
+
+      // Configure verification query - verify age >= 18 only
+      const {
+        url,
+        requestId,
+        onRequestReceived,
+        onGeneratingProof,
+        onProofGenerated,
+        onResult,
+        onReject,
+        onError,
+      } = queryBuilder
+        .gte("age", 18)
+        .done()
+
+      console.log('[zkPassport] Proof URL generated:', url)
+      console.log('[zkPassport] Request ID:', requestId)
+
+      setZkProofUrl(url)
+      setZkProofStatus("QR Code generated - scan with your phone")
+
+      // Wait for canvas to be ready in the DOM
+      setTimeout(async () => {
+        if (qrCanvasRef.current) {
+          try {
+            console.log('[zkPassport] Rendering QR code to canvas...')
+            await QRCode.toCanvas(qrCanvasRef.current, url, {
+              width: 300,
+              margin: 2,
+            })
+            console.log('[zkPassport] QR code rendered successfully')
+          } catch (error) {
+            console.error('[zkPassport] Failed to render QR code:', error)
+            setZkProofStatus(`QR code error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+          }
+        } else {
+          console.error('[zkPassport] Canvas ref not found')
+        }
+      }, 100)
+
+      // Set up callbacks
+      onRequestReceived(() => {
+        console.log('[zkPassport] Request received by mobile app')
+        setZkProofStatus("Request received - generating proof...")
+      })
+
+      onGeneratingProof(() => {
+        console.log('[zkPassport] Generating proof...')
+        setZkProofStatus("Generating zero-knowledge proof...")
+      })
+
+      onProofGenerated(({ proof, vkeyHash, version, name }) => {
+        console.log('[zkPassport] Proof generated:', { proof, vkeyHash, version, name })
+        setZkProofStatus("Proof generated - verifying...")
+      })
+
+      onResult(({ uniqueIdentifier, verified, result }) => {
+        console.log('[zkPassport] Verification result:', { uniqueIdentifier, verified, result })
+        setZkProofStatus("Verification complete!")
+        setZkProofResult({
+          uniqueIdentifier,
+          verified,
+          ageVerified: result.age?.gte?.result,
+        })
+      })
+
+      onReject(() => {
+        console.log('[zkPassport] User rejected the proof request')
+        setZkProofStatus("Proof request rejected by user")
+      })
+
+      onError((error) => {
+        console.error('[zkPassport] Error:', error)
+        setZkProofStatus(`Error: ${error}`)
+      })
+
+    } catch (error) {
+      console.error('[zkPassport] Failed to generate proof request:', error)
+      setZkProofStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
   return (
     <div className="min-h-screen text-foreground antialiased selection:bg-primary/10 selection:text-primary pb-20 font-sans">
       <AztecBackground />
@@ -258,6 +365,69 @@ export default function SubscribePage() {
                   : "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"
               }`}>
                 {subscribeResult}
+              </div>
+            )}
+          </section>
+
+          {/* zkPassport Section */}
+          <section className="rounded-xl border border-border/50 bg-card p-5 shadow-sm space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-2">
+                🛂 zkPassport Verification
+              </h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Verify your identity using zkPassport - scan the QR code with your phone
+              </p>
+            </div>
+
+            {!zkProofUrl ? (
+              <Button
+                onClick={handleGenerateZkProof}
+                className="w-full font-medium"
+              >
+                Generate Verification QR Code
+              </Button>
+            ) : (
+              <div className="space-y-4">
+                {/* QR Code Canvas */}
+                <div className="flex justify-center">
+                  <div className="bg-white p-4 rounded-lg">
+                    <canvas ref={qrCanvasRef} />
+                  </div>
+                </div>
+
+                {/* Status */}
+                {zkProofStatus && (
+                  <div className="p-3 rounded-md text-sm bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300">
+                    {zkProofStatus}
+                  </div>
+                )}
+
+                {/* Proof Result */}
+                {zkProofResult && (
+                  <div className="space-y-2">
+                    <div className="p-3 rounded-md text-sm bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300">
+                      <div className="font-semibold mb-2">✓ Age Verification Successful</div>
+                      <div className="space-y-1 text-xs">
+                        <div>User ID: {zkProofResult.uniqueIdentifier}</div>
+                        <div>Age 18+: {zkProofResult.ageVerified ? "✓ Verified" : "✗ Not verified"}</div>
+                        <div>Proof Valid: {zkProofResult.verified ? "✓ Yes" : "✗ No"}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Deep link for mobile */}
+                <div className="text-center">
+                  <a
+                    href={zkProofUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    Or tap here to open on mobile
+                  </a>
+                </div>
               </div>
             )}
           </section>
