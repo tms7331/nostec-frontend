@@ -361,6 +361,35 @@ export default function NostrClient() {
     setPubkeysResult(null)
 
     try {
+      // Fetch subscriptions from database
+      console.log("[Obsidion] Fetching subscriptions for address:", userAztecAddress)
+      const subsResult = await getSubscriptionsTo(userAztecAddress)
+
+      // Build registerSenders array from subscriptions
+      const registerSenders: AztecAddress[] = []
+
+      if (subsResult.success && subsResult.subscriptions) {
+        for (const subscription of subsResult.subscriptions) {
+          // Filter for valid from_aztec_key values
+          if (subscription.from_aztec_key &&
+            subscription.from_aztec_key.trim() !== "" &&
+            subscription.from_aztec_key !== "0x") {
+            try {
+              const senderAddress = AztecAddress.fromString(subscription.from_aztec_key)
+              registerSenders.push(senderAddress)
+              console.log("[Obsidion] Added sender:", subscription.from_aztec_key)
+            } catch (error) {
+              console.warn("[Obsidion] Invalid Aztec address in subscription:", subscription.from_aztec_key, error)
+            }
+          }
+        }
+      }
+
+      // Always include the current account
+      registerSenders.push(obsidianAccount.getAddress())
+
+      console.log("[Obsidion] Register senders count:", registerSenders.length)
+
       // Hardcoded contract address
       const contractAddress = "0x1f16073628f6a2740a1e86621db02fa3cf29b8f45a86d0d61d076a956fac8d2d"
 
@@ -376,7 +405,7 @@ export default function NostrClient() {
         .get_nostr_pubkeys(
           AztecAddress.fromString(userAztecAddress),
           {
-            registerSenders: [obsidianAccount.getAddress()],
+            registerSenders: registerSenders,
           }
         )
         .simulate()
@@ -406,6 +435,35 @@ export default function NostrClient() {
     setFollowerNotesResult(null)
 
     try {
+      // Fetch subscriptions from database
+      console.log("[Obsidion] Fetching subscriptions for address:", userAztecAddress)
+      const subsResult = await getSubscriptionsTo(userAztecAddress)
+
+      // Build registerSenders array from subscriptions
+      const registerSenders: AztecAddress[] = []
+
+      if (subsResult.success && subsResult.subscriptions) {
+        for (const subscription of subsResult.subscriptions) {
+          // Filter for valid from_aztec_key values
+          if (subscription.from_aztec_key &&
+            subscription.from_aztec_key.trim() !== "" &&
+            subscription.from_aztec_key !== "0x") {
+            try {
+              const senderAddress = AztecAddress.fromString(subscription.from_aztec_key)
+              registerSenders.push(senderAddress)
+              console.log("[Obsidion] Added sender:", subscription.from_aztec_key)
+            } catch (error) {
+              console.warn("[Obsidion] Invalid Aztec address in subscription:", subscription.from_aztec_key, error)
+            }
+          }
+        }
+      }
+
+      // Always include the current account
+      registerSenders.push(obsidianAccount.getAddress())
+
+      console.log("[Obsidion] Register senders count:", registerSenders.length)
+
       // Hardcoded contract address
       const contractAddress = "0x1f16073628f6a2740a1e86621db02fa3cf29b8f45a86d0d61d076a956fac8d2d"
 
@@ -421,7 +479,7 @@ export default function NostrClient() {
         .view_follower_notes(
           AztecAddress.fromString(userAztecAddress),
           {
-            registerSenders: [obsidianAccount.getAddress()],
+            registerSenders: registerSenders,
           }
         )
         .simulate()
@@ -635,22 +693,20 @@ export default function NostrClient() {
                       </div>
 
                       {pubkeysResult && (
-                        <div className={`p-3 rounded-md text-xs ${
-                          pubkeysResult.includes("Error")
-                            ? "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"
-                            : "bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300"
-                        }`}>
+                        <div className={`p-3 rounded-md text-xs ${pubkeysResult.includes("Error")
+                          ? "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"
+                          : "bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300"
+                          }`}>
                           <div className="font-semibold mb-2">Nostr Public Keys:</div>
                           <pre className="whitespace-pre-wrap break-words text-xs">{pubkeysResult}</pre>
                         </div>
                       )}
 
                       {followerNotesResult && (
-                        <div className={`p-3 rounded-md text-xs ${
-                          followerNotesResult.includes("Error")
-                            ? "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"
-                            : "bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300"
-                        }`}>
+                        <div className={`p-3 rounded-md text-xs ${followerNotesResult.includes("Error")
+                          ? "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"
+                          : "bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300"
+                          }`}>
                           <div className="font-semibold mb-2">Follower Notes:</div>
                           <pre className="whitespace-pre-wrap break-words text-xs">{followerNotesResult}</pre>
                         </div>
