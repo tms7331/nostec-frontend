@@ -6,6 +6,7 @@ export interface NostrEvent {
   tags: string[][]
   content: string
   sig: string
+  ens_username?: string // Optional ENS username
 }
 
 export type NostrEventType = "plaintext" | "encrypted"

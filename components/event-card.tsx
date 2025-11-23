@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { Lock, Unlock, ShieldAlert, Key } from "lucide-react"
+import Link from "next/link"
 import type { NostrEvent } from "../types/nostr"
 import { decryptContent } from "@/lib/crypto/encryption"
 
@@ -25,8 +26,8 @@ export function EventCard({ event, decryptedContent: initialDecryptedContent, de
     minute: "numeric",
   })
 
-  // Shorten pubkey
-  const shortPubkey = `${event.pubkey.slice(0, 8)}...`
+  // Display full ENS name if available, otherwise full public key
+  const displayName = event.ens_username || event.pubkey
 
   const handleDecrypt = async () => {
     if (!decryptKey.trim()) return
@@ -60,8 +61,8 @@ export function EventCard({ event, decryptedContent: initialDecryptedContent, de
             {isEncrypted ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
             {isEncrypted ? "Encrypted" : "Plaintext"}
           </span>
-          <span className="font-mono text-xs text-muted-foreground" title={event.pubkey}>
-            {shortPubkey}
+          <span className="font-mono text-xs text-muted-foreground break-all" title={event.pubkey}>
+            {displayName}
           </span>
         </div>
         <span className="whitespace-nowrap text-xs text-muted-foreground">{formattedDate}</span>
@@ -82,9 +83,18 @@ export function EventCard({ event, decryptedContent: initialDecryptedContent, de
               </>
             ) : (
               <div className="space-y-3">
-                <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                  <Lock className="h-4 w-4" />
-                  <span>Encrypted content - enter key to decrypt</span>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                    <Lock className="h-4 w-4" />
+                    <span>Encrypted content - enter key to decrypt</span>
+                  </div>
+                  {event.ens_username && (
+                    <Link href={`/subscribe/${event.ens_username}`}>
+                      <button className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors">
+                        Subscribe
+                      </button>
+                    </Link>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <div className="relative flex-1">

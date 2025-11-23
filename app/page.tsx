@@ -11,7 +11,7 @@ import { AztecBackground } from "@/components/aztec-background" // Import AztecB
 import type { NostrEvent } from "@/types/nostr"
 import * as secp256k1 from "@noble/secp256k1"
 import { createSignedEvent } from "@/lib/nostr/crypto"
-import { createPost, getAllPosts } from "@/lib/services/posts"
+import { createPost, getAllPosts, getPostsByPubkey } from "@/lib/services/posts"
 import { generateEncryptionKey, encryptContent } from "@/lib/crypto/encryption"
 import { createENSSubname, checkUsernameAvailability } from "@/lib/services/namespace"
 
@@ -103,7 +103,7 @@ export default function NostrClient() {
     }
   }
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (loginKey.trim()) {
       try {
         // Derive public key from the provided private key
@@ -121,6 +121,17 @@ export default function NostrClient() {
         setIsLoggedIn(true)
         setLoginKey("") // Clear input
         console.log("[Nostec] User logged in")
+
+        // Try to fetch ENS username from previous posts
+        const postsResult = await getPostsByPubkey(publicKeyHex)
+        if (postsResult.success && postsResult.posts && postsResult.posts.length > 0) {
+          // Find the first post with an ENS username
+          const postWithENS = postsResult.posts.find(post => post.ens_username)
+          if (postWithENS?.ens_username) {
+            setEnsUsername(postWithENS.ens_username)
+            console.log("[Nostec] Found ENS username from previous posts:", postWithENS.ens_username)
+          }
+        }
       } catch (error) {
         console.error("[Nostec] Invalid private key:", error)
         alert("Invalid private key format")
@@ -132,6 +143,7 @@ export default function NostrClient() {
     setIsLoggedIn(false)
     setPrivkey("")
     setPubkey("")
+    setEnsUsername(null)
   }
 
   // Load initial state
@@ -178,6 +190,11 @@ export default function NostrClient() {
 
       // Sign the event
       const signedEvent = await createSignedEvent(unsignedEvent, privkey)
+
+      // Add ENS username if available
+      if (ensUsername) {
+        signedEvent.ens_username = ensUsername
+      }
 
       // Save to Supabase
       const result = await createPost(signedEvent)

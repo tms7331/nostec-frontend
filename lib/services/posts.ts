@@ -27,7 +27,8 @@ export async function createPost(event: NostrEvent): Promise<CreatePostResult> {
         kind: event.kind,
         tags: event.tags,
         content: event.content,
-        sig: event.sig
+        sig: event.sig,
+        ens_username: event.ens_username || null
       }])
       .select()
       .single()
