@@ -15,6 +15,12 @@ import { createPost, getAllPosts, getPostsByPubkey } from "@/lib/services/posts"
 import { generateEncryptionKey, encryptContent, encryptKeyForRecipient } from "@/lib/crypto/encryption"
 import { createENSSubname, checkUsernameAvailability } from "@/lib/services/namespace"
 import { getSubscriptionsTo } from "@/lib/services/subscriptions"
+import { getObsidianSdk } from "@/lib/obsidian/sdk"
+import { AztecAddress } from "@aztec/aztec.js/addresses"
+import { CounterContract, CounterContractArtifact } from "@/lib/artifacts/Counter"
+import { Contract } from "@nemi-fi/wallet-sdk/eip1193"
+
+class Counter extends Contract.fromAztec(CounterContract as any) { }
 
 
 export default function NostrClient() {
@@ -34,6 +40,12 @@ export default function NostrClient() {
   const [userAztecAddress, setUserAztecAddress] = useState<string | null>(null) // User's own Aztec address
   const [ensUsername, setEnsUsername] = useState<string | null>(null)
   const [isCreatingAccount, setIsCreatingAccount] = useState(false)
+
+  // Obsidion wallet state
+  const [obsidianAccount, setObsidianAccount] = useState<any>(null)
+  const [isConnectingWallet, setIsConnectingWallet] = useState(false)
+  const [isFetchingPubkeys, setIsFetchingPubkeys] = useState(false)
+  const [pubkeysResult, setPubkeysResult] = useState<string | null>(null)
 
   const createPrivateKey = () => {
     // Generate a random 32-byte private key using browser crypto API
@@ -309,6 +321,74 @@ export default function NostrClient() {
     }
   }
 
+  const handleConnectWallet = async () => {
+    setIsConnectingWallet(true)
+    try {
+      const sdk = getObsidianSdk()
+      if (!sdk) {
+        throw new Error("SDK not initialized")
+      }
+      const account = await sdk.connect("obsidion")
+      setObsidianAccount(account)
+      const aztecAddr = account.getAddress().toString()
+      console.log("[Obsidion] Connected to wallet:", aztecAddr)
+
+      // Store Aztec address in localStorage and state
+      localStorage.setItem('nostec_aztec_address', aztecAddr)
+      setUserAztecAddress(aztecAddr)
+    } catch (error) {
+      console.error("[Obsidion] Failed to connect:", error)
+      alert("Failed to connect to Obsidion wallet. Make sure the wallet is open.")
+    } finally {
+      setIsConnectingWallet(false)
+    }
+  }
+
+  const handleGetNostrPubkeys = async () => {
+    if (!obsidianAccount) {
+      alert("Please connect your Obsidion wallet first")
+      return
+    }
+
+    if (!userAztecAddress) {
+      alert("No Aztec address found")
+      return
+    }
+
+    setIsFetchingPubkeys(true)
+    setPubkeysResult(null)
+
+    try {
+      // Hardcoded contract address
+      const contractAddress = "0x1f16073628f6a2740a1e86621db02fa3cf29b8f45a86d0d61d076a956fac8d2d"
+
+      // Connect to the Counter contract
+      const counter = await Counter.at(
+        AztecAddress.fromString(contractAddress),
+        obsidianAccount
+      )
+
+      // Call get_nostr_pubkeys offchain using simulate()
+      console.log("[Obsidion] Fetching nostr pubkeys for address:", userAztecAddress)
+      const result = await counter.methods
+        .get_nostr_pubkeys(
+          AztecAddress.fromString(userAztecAddress),
+          {
+            registerSenders: [obsidianAccount.getAddress()],
+          }
+        )
+        .simulate()
+
+      console.log("[Obsidion] Nostr pubkeys result:", result)
+      setPubkeysResult(JSON.stringify(result, null, 2))
+    } catch (error) {
+      console.error("[Obsidion] Failed to fetch nostr pubkeys:", error)
+      setPubkeysResult(`Error: ${error instanceof Error ? error.message : "Unknown error"}`)
+    } finally {
+      setIsFetchingPubkeys(false)
+    }
+  }
+
 
   return (
     <div className="min-h-screen text-foreground antialiased selection:bg-primary/10 selection:text-primary pb-20 font-sans">
@@ -460,6 +540,53 @@ export default function NostrClient() {
 
                 <section>
                   <PostForm onSubmit={handlePostSubmit} connected={connected} isSubmitting={isSubmittingPost} />
+                </section>
+
+                {/* Obsidion Wallet Section */}
+                <section className="rounded-xl border border-border/50 bg-card p-5 shadow-sm space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground mb-2">
+                      🔮 Obsidion Wallet
+                    </h3>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Connect your Obsidion wallet to fetch your Nostr public keys from the blockchain
+                    </p>
+                  </div>
+
+                  {!obsidianAccount ? (
+                    <Button
+                      onClick={handleConnectWallet}
+                      disabled={isConnectingWallet}
+                      className="w-full font-medium"
+                    >
+                      {isConnectingWallet ? "Connecting..." : "Connect Obsidion Wallet"}
+                    </Button>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 px-3 py-2 rounded-md">
+                        <span>✓</span>
+                        <span>Connected: {obsidianAccount.getAddress().toString().substring(0, 20)}...</span>
+                      </div>
+
+                      <Button
+                        onClick={handleGetNostrPubkeys}
+                        disabled={isFetchingPubkeys}
+                        className="w-full font-medium"
+                      >
+                        {isFetchingPubkeys ? "Fetching..." : "Get Nostr Public Keys"}
+                      </Button>
+
+                      {pubkeysResult && (
+                        <div className={`p-3 rounded-md text-xs ${
+                          pubkeysResult.includes("Error")
+                            ? "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"
+                            : "bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300"
+                        }`}>
+                          <pre className="whitespace-pre-wrap break-words text-xs">{pubkeysResult}</pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </section>
 
               </>
