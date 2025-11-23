@@ -10,6 +10,11 @@ import { getObsidianSdk } from "@/lib/obsidian/sdk"
 import { createSubscription } from "@/lib/services/subscriptions"
 import { ZKPassport } from "@zkpassport/sdk"
 import QRCode from "qrcode"
+import { AztecAddress } from "@aztec/aztec.js/addresses"
+import { CounterContract, CounterContractArtifact } from "@/lib/artifacts/Counter"
+import { Contract } from "@nemi-fi/wallet-sdk/eip1193"
+
+class Counter extends Contract.fromAztec(CounterContract as any) { }
 
 export default function SubscribePage() {
   const params = useParams()
@@ -109,18 +114,59 @@ export default function SubscribePage() {
     setSubscribeResult(null)
 
     try {
+      // Step 1: Write to database
       const fromAddress = obsidianAccount.getAddress().toString()
+      console.log('[Nostec] Writing subscription to database...')
       const result = await createSubscription(fromAddress, nostrPubkey, aztecAddress)
 
-      if (result.success) {
-        console.log('[Nostec] Subscription created:', result.subscription)
-        setSubscribeResult(`Successfully subscribed to ${username}!`)
-      } else {
+      if (!result.success) {
         console.error('[Nostec] Failed to create subscription:', result.error)
         setSubscribeResult(`Failed to subscribe: ${result.error}`)
+        return
       }
+
+      console.log('[Nostec] Subscription created in database:', result.subscription)
+
+      // Step 2: Submit transaction to Obsidion wallet
+      console.log('[Nostec] Submitting transaction to Obsidion wallet...')
+      setSubscribeResult('Database entry created. Submitting blockchain transaction...')
+
+      // Hardcoded contract address
+      const contractAddress = "0x1f16073628f6a2740a1e86621db02fa3cf29b8f45a86d0d61d076a956fac8d2d"
+
+      // Connect to the Counter contract
+      const counter = await Counter.at(
+        AztecAddress.fromString(contractAddress),
+        obsidianAccount
+      )
+
+      console.log("[Nostec] Submitting add_follower_note_nocheck transaction...")
+
+      // Submit the transaction
+      // First param: subscriber's Aztec address (the person subscribing)
+      // Second param: owner's Aztec address (the person being subscribed to)
+      const tx = counter.methods
+        .add_follower_note_nocheck(
+          obsidianAccount.getAddress(),
+          AztecAddress.fromString(aztecAddress),
+          {
+            registerContracts: [
+              {
+                address: counter.address,
+                instance: counter.instance,
+                artifact: CounterContractArtifact,
+              },
+            ],
+          }
+        )
+        .send()
+
+      const receipt = await tx.wait({ timeout: 200000 })
+
+      console.log("[Nostec] Transaction successful:", receipt.txHash)
+      setSubscribeResult(`Successfully subscribed to ${username}! Tx: ${receipt.txHash.toString()}`)
     } catch (error) {
-      console.error('[Nostec] Error creating subscription:', error)
+      console.error('[Nostec] Error during subscription:', error)
       setSubscribeResult(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSubscribing(false)
