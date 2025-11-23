@@ -90,38 +90,35 @@ export class CounterContract extends ContractBase {
   }
 
 
-  public static get storage(): ContractStorageLayout<'owner' | 'counter' | 'follower_notes'> {
+  public static get storage(): ContractStorageLayout<'owner' | 'follower_notes'> {
     return {
       owner: {
         slot: new Fr(1n),
       },
-      counter: {
-        slot: new Fr(3n),
-      },
       follower_notes: {
-        slot: new Fr(4n),
+        slot: new Fr(3n),
       }
-    } as ContractStorageLayout<'owner' | 'counter' | 'follower_notes'>;
+    } as ContractStorageLayout<'owner' | 'follower_notes'>;
   }
 
 
   /** Type-safe wrappers for the public methods exposed by the contract. */
   public declare methods: {
 
-    /** add_follower_note(amount: field, owner: struct) */
-    add_follower_note: ((amount: FieldLike, owner: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** add_follower_note(circuitInputs: struct, zk_id: field, nostr_pubkey: struct, owner: struct) */
+    add_follower_note: ((circuitInputs: { vkey: FieldLike[], vkey_hash: FieldLike, proof: FieldLike[], public_inputs: FieldLike[] }, zk_id: FieldLike, nostr_pubkey: AztecAddressLike, owner: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** add_follower_note_nocheck(nostr_pubkey: struct, owner: struct) */
+    add_follower_note_nocheck: ((nostr_pubkey: AztecAddressLike, owner: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** constructor(owner: struct) */
     constructor: ((owner: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** get_counter() */
-    get_counter: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** get_nostr_pubkeys(owner: struct) */
+    get_nostr_pubkeys: ((owner: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** get_owner() */
     get_owner: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
-
-    /** increment() */
-    increment: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** process_message(message_ciphertext: struct, message_context: struct) */
     process_message: ((message_ciphertext: FieldLike[], message_context: { tx_hash: FieldLike, unique_note_hashes_in_tx: FieldLike[], first_nullifier_in_tx: FieldLike, recipient: AztecAddressLike }) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -131,6 +128,9 @@ export class CounterContract extends ContractBase {
 
     /** sync_private_state() */
     sync_private_state: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** view_follower_notes(owner: struct) */
+    view_follower_notes: ((owner: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
   };
 
 

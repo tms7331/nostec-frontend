@@ -9,7 +9,9 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@aztec/aztec.js": "^3.0.0-devnet.2",
     "@hookform/resolvers": "^3.10.0",
+    "@nemi-fi/wallet-sdk": "github:nemi-fi/wallet-sdk#3.0.0-devnet.2",
     "@noble/secp256k1": "^3.0.0",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",
@@ -60,8 +62,7 @@
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
-    "zod": "3.25.76",
-    "@nemi-fi/wallet-sdk": "github:nemi-fi/wallet-sdk#3.0.0-devnet.2"
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.9",
