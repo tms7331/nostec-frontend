@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
-import { Lock, Unlock, ShieldAlert, Key } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Lock, Unlock } from "lucide-react"
 import Link from "next/link"
 import type { NostrEvent } from "../types/nostr"
-import { decryptContent } from "@/lib/crypto/encryption"
+import { decryptContent, decryptKeyFromSender } from "@/lib/crypto/encryption"
 
 interface EventCardProps {
   event: NostrEvent
@@ -13,10 +13,9 @@ interface EventCardProps {
 }
 
 export function EventCard({ event, decryptedContent: initialDecryptedContent, decryptionFailed }: EventCardProps) {
-  const [decryptKey, setDecryptKey] = useState("")
   const [decryptedContent, setDecryptedContent] = useState(initialDecryptedContent)
   const [isDecrypting, setIsDecrypting] = useState(false)
-  const [decryptError, setDecryptError] = useState<string | null>(null)
+  const [isSubscriber, setIsSubscriber] = useState(false)
   const isEncrypted = event.kind === 4
   const formattedDate = new Date(event.created_at * 1000).toLocaleString(undefined, {
     month: "short",
@@ -29,23 +28,53 @@ export function EventCard({ event, decryptedContent: initialDecryptedContent, de
   // Display full ENS name if available, otherwise full public key
   const displayName = event.ens_username || event.pubkey
 
-  const handleDecrypt = async () => {
-    if (!decryptKey.trim()) return
+  // Auto-decrypt for subscribers
+  useEffect(() => {
+    const autoDecrypt = async () => {
+      if (!isEncrypted || decryptedContent) return
 
-    setIsDecrypting(true)
-    setDecryptError(null)
+      // Get user's keys from localStorage
+      const userPubkey = localStorage.getItem('nostec_pubkey')
+      const userPrivkey = localStorage.getItem('nostec_privkey')
 
-    try {
-      const decrypted = await decryptContent(event.content, decryptKey)
-      setDecryptedContent(decrypted)
-      setDecryptKey("") // Clear the key input
-    } catch (error) {
-      setDecryptError("Invalid key or corrupted data")
-      console.error("[Nostec] Decryption failed:", error)
-    } finally {
-      setIsDecrypting(false)
+      if (!userPubkey || !userPrivkey) return
+
+      // Check if user's pubkey is in the tags
+      if (!event.tags || event.tags.length === 0) return
+
+      // Find tag with user's pubkey
+      const userTag = event.tags.find(tag => tag[0] === 'e' && tag[1] === userPubkey)
+
+      if (!userTag || !userTag[2]) {
+        console.log("[Nostec] User not subscribed to this post")
+        return
+      }
+
+      // User is a subscriber! Decrypt the key
+      setIsSubscriber(true)
+      setIsDecrypting(true)
+
+      try {
+        const encryptedKey = userTag[2]
+        console.log("[Nostec] Found encrypted key for user, decrypting...")
+
+        // Decrypt the encryption key using sender's pubkey and user's privkey
+        const decryptionKey = await decryptKeyFromSender(encryptedKey, event.pubkey, userPrivkey)
+        console.log("[Nostec] Decrypted encryption key successfully")
+
+        // Use the decrypted key to decrypt the content
+        const decrypted = await decryptContent(event.content, decryptionKey)
+        setDecryptedContent(decrypted)
+        console.log("[Nostec] Auto-decrypted post content")
+      } catch (error) {
+        console.error("[Nostec] Auto-decryption failed:", error)
+      } finally {
+        setIsDecrypting(false)
+      }
     }
-  }
+
+    autoDecrypt()
+  }, [event, isEncrypted, decryptedContent])
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm transition-all hover:shadow-md md:p-5">
@@ -77,50 +106,27 @@ export function EventCard({ event, decryptedContent: initialDecryptedContent, de
               <>
                 <div className="flex items-center gap-2 text-xs font-medium text-green-600 dark:text-green-400">
                   <Unlock className="h-3.5 w-3.5" />
-                  Decrypted
+                  {isSubscriber ? "Auto-decrypted (Subscriber)" : "Decrypted"}
                 </div>
                 <p>{decryptedContent}</p>
               </>
+            ) : isDecrypting ? (
+              <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                <Lock className="h-4 w-4 animate-pulse" />
+                <span>Decrypting...</span>
+              </div>
             ) : (
               <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                    <Lock className="h-4 w-4" />
-                    <span>Encrypted content - enter key to decrypt</span>
-                  </div>
-                  {event.ens_username && (
-                    <Link href={`/subscribe/${event.ens_username}`}>
-                      <button className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors">
-                        Subscribe
-                      </button>
-                    </Link>
-                  )}
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <Lock className="h-4 w-4" />
+                  <span>Encrypted content - subscribers only</span>
                 </div>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <input
-                      type="text"
-                      value={decryptKey}
-                      onChange={(e) => setDecryptKey(e.target.value)}
-                      placeholder="Paste decryption key..."
-                      className="w-full rounded-lg border bg-background pl-10 pr-4 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none"
-                      disabled={isDecrypting}
-                    />
-                  </div>
-                  <button
-                    onClick={handleDecrypt}
-                    disabled={!decryptKey.trim() || isDecrypting}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {isDecrypting ? "Decrypting..." : "Decrypt"}
-                  </button>
-                </div>
-                {decryptError && (
-                  <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
-                    <ShieldAlert className="h-3.5 w-3.5" />
-                    {decryptError}
-                  </div>
+                {event.ens_username && (
+                  <Link href={`/subscribe/${event.ens_username}`}>
+                    <button className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors">
+                      Subscribe to view
+                    </button>
+                  </Link>
                 )}
               </div>
             )}

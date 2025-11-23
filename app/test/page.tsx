@@ -39,7 +39,11 @@ export default function TestPage() {
             }
             const account = await sdk.connect("obsidion")
             setObsidianAccount(account)
-            console.log("[Obsidion] Connected to wallet:", account.getAddress())
+            const aztecAddress = account.getAddress().toString()
+            console.log("[Obsidion] Connected to wallet:", aztecAddress)
+
+            // Store Aztec address in localStorage
+            localStorage.setItem('nostec_aztec_address', aztecAddress)
         } catch (error) {
             console.error("[Obsidion] Failed to connect:", error)
             alert("Failed to connect to Obsidion wallet. Make sure the wallet is open.")

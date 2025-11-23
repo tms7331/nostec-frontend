@@ -12,8 +12,9 @@ import type { NostrEvent } from "@/types/nostr"
 import * as secp256k1 from "@noble/secp256k1"
 import { createSignedEvent } from "@/lib/nostr/crypto"
 import { createPost, getAllPosts, getPostsByPubkey } from "@/lib/services/posts"
-import { generateEncryptionKey, encryptContent } from "@/lib/crypto/encryption"
+import { generateEncryptionKey, encryptContent, encryptKeyForRecipient } from "@/lib/crypto/encryption"
 import { createENSSubname, checkUsernameAvailability } from "@/lib/services/namespace"
+import { getSubscriptionsTo } from "@/lib/services/subscriptions"
 
 
 export default function NostrClient() {
@@ -28,9 +29,9 @@ export default function NostrClient() {
   const [decryptionFailures, setDecryptionFailures] = useState<Set<string>>(new Set())
   const [isLoadingPosts, setIsLoadingPosts] = useState(false)
   const [isSubmittingPost, setIsSubmittingPost] = useState(false)
-  const [lastEncryptionKey, setLastEncryptionKey] = useState<string | null>(null)
   const [desiredUsername, setDesiredUsername] = useState("")
-  const [aztecAddress, setAztecAddress] = useState("")
+  const [aztecAddress, setAztecAddress] = useState("") // For account creation input
+  const [userAztecAddress, setUserAztecAddress] = useState<string | null>(null) // User's own Aztec address
   const [ensUsername, setEnsUsername] = useState<string | null>(null)
   const [isCreatingAccount, setIsCreatingAccount] = useState(false)
 
@@ -88,16 +89,20 @@ export default function NostrClient() {
         setPrivkey(privateKey)
         setPubkey(publicKey)
         setEnsUsername(result.ensName || null)
+        setUserAztecAddress(aztecAddress) // Store the Aztec address in state
         setIsLoggedIn(true)
-        setDesiredUsername("") // Clear inputs
-        setAztecAddress("")
 
-        // Store keys in localStorage
+        // Store keys and Aztec address in localStorage
         localStorage.setItem('nostec_privkey', privateKey)
         localStorage.setItem('nostec_pubkey', publicKey)
+        localStorage.setItem('nostec_aztec_address', aztecAddress)
         if (result.ensName) {
           localStorage.setItem('nostec_ens', result.ensName)
         }
+
+        // Clear inputs
+        setDesiredUsername("")
+        setAztecAddress("")
       } else {
         console.error("[Nostec] Failed to create ENS subname:", result.error)
         alert(`Failed to create ENS username: ${result.error}`)
@@ -177,6 +182,7 @@ export default function NostrClient() {
     const storedPrivkey = localStorage.getItem('nostec_privkey')
     const storedPubkey = localStorage.getItem('nostec_pubkey')
     const storedEns = localStorage.getItem('nostec_ens')
+    const storedAztecAddress = localStorage.getItem('nostec_aztec_address')
 
     if (storedPrivkey && storedPubkey) {
       console.log("[Nostec] Found stored keys, auto-logging in")
@@ -186,6 +192,11 @@ export default function NostrClient() {
       if (storedEns) {
         setEnsUsername(storedEns)
       }
+    }
+
+    if (storedAztecAddress) {
+      console.log("[Nostec] Loaded Aztec address from localStorage")
+      setUserAztecAddress(storedAztecAddress)
     }
 
     return () => clearTimeout(timer)
@@ -199,7 +210,6 @@ export default function NostrClient() {
     }
 
     setIsSubmittingPost(true)
-    setLastEncryptionKey(null) // Clear previous key
 
     try {
       let finalContent = content
@@ -228,16 +238,46 @@ export default function NostrClient() {
         signedEvent.ens_username = ensUsername
       }
 
+      // If encrypted post and user has Aztec address, encrypt key for subscribers
+      if (encrypted && encryptionKey && userAztecAddress) {
+        console.log("[Nostec] Encrypting keys for subscribers...")
+        console.log("[Nostec] User's Aztec address:", userAztecAddress)
+        const subsResult = await getSubscriptionsTo(userAztecAddress)
+        console.log("[Nostec] Subscriptions query result:", subsResult)
+
+        if (subsResult.success && subsResult.subscriptions && subsResult.subscriptions.length > 0) {
+          const tags: string[][] = []
+
+          for (const subscription of subsResult.subscriptions) {
+            try {
+              const encryptedKey = await encryptKeyForRecipient(
+                encryptionKey,
+                subscription.from_nostr_pubkey,
+                privkey
+              )
+
+              // Add tag: ["e", subscriber_pubkey, encrypted_key]
+              tags.push(["e", subscription.from_nostr_pubkey, encryptedKey])
+              console.log(`[Nostec] Encrypted key for subscriber: ${subscription.from_nostr_pubkey.substring(0, 8)}...`)
+            } catch (error) {
+              console.error(`[Nostec] Failed to encrypt key for ${subscription.from_nostr_pubkey}:`, error)
+            }
+          }
+
+          signedEvent.tags = tags
+          console.log(`[Nostec] Added ${tags.length} encrypted keys to post tags`)
+        } else {
+          console.log("[Nostec] No subscribers found or query failed")
+        }
+      } else {
+        console.log("[Nostec] Skipping subscriber encryption - encrypted:", encrypted, "encryptionKey:", !!encryptionKey, "userAztecAddress:", userAztecAddress)
+      }
+
       // Save to Supabase
       const result = await createPost(signedEvent)
 
       if (result.success) {
         console.log("[Nostec] Post created successfully:", result.event)
-
-        // Save encryption key to show to user
-        if (encryptionKey) {
-          setLastEncryptionKey(encryptionKey)
-        }
 
         // Reload posts to include the new one
         await loadPosts()
@@ -421,30 +461,6 @@ export default function NostrClient() {
                 <section>
                   <PostForm onSubmit={handlePostSubmit} connected={connected} isSubmitting={isSubmittingPost} />
                 </section>
-
-                {lastEncryptionKey && (
-                  <section className="rounded-xl border border-purple-500/50 bg-purple-50 dark:bg-purple-950/20 p-5 shadow-sm">
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1">
-                        <h3 className="text-sm font-semibold text-purple-900 dark:text-purple-100 mb-2">
-                          🔐 Encryption Key
-                        </h3>
-                        <p className="text-xs text-purple-700 dark:text-purple-300 mb-3">
-                          Save this key to decrypt your encrypted post. Share it only with people you want to read this message.
-                        </p>
-                        <div className="font-mono text-xs bg-white dark:bg-black p-3 rounded border border-purple-200 dark:border-purple-800 break-all select-all">
-                          {lastEncryptionKey}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setLastEncryptionKey(null)}
-                        className="text-purple-500 hover:text-purple-700 text-sm"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </section>
-                )}
 
               </>
             )}
