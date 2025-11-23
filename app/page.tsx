@@ -15,6 +15,8 @@ import { createPost, getAllPosts } from "@/lib/services/posts"
 import { generateEncryptionKey, encryptContent } from "@/lib/crypto/encryption"
 import { createENSSubname, checkUsernameAvailability } from "@/lib/services/namespace"
 import { fetchENSSubname, type FetchENSResult } from "@/lib/services/ens-fetch"
+import { getObsidianSdk } from "@/lib/obsidian/sdk"
+import { CounterContract } from "@/lib/artifacts/Counter"
 
 export default function NostrClient() {
   // State
@@ -36,6 +38,15 @@ export default function NostrClient() {
   const [ensFetchName, setEnsFetchName] = useState("")
   const [ensFetchResult, setEnsFetchResult] = useState<FetchENSResult | null>(null)
   const [isFetchingENS, setIsFetchingENS] = useState(false)
+
+  // Obsidian wallet state
+  const [obsidianAccount, setObsidianAccount] = useState<any>(null)
+  const [isConnectingWallet, setIsConnectingWallet] = useState(false)
+  const [contractAddress, setContractAddress] = useState("")
+  const [followerAmount, setFollowerAmount] = useState("")
+  const [followerOwner, setFollowerOwner] = useState("")
+  const [isSubmittingTx, setIsSubmittingTx] = useState(false)
+  const [txResult, setTxResult] = useState<string | null>(null)
 
   const createPrivateKey = () => {
     // Generate a random 32-byte private key using browser crypto API
@@ -250,6 +261,78 @@ export default function NostrClient() {
     }
   }
 
+  // Obsidian wallet handlers
+  const handleConnectWallet = async () => {
+    setIsConnectingWallet(true)
+    try {
+      const sdk = getObsidianSdk()
+      if (!sdk) {
+        throw new Error("SDK not initialized")
+      }
+      const account = await sdk.connect("obsidion")
+      setObsidianAccount(account)
+      console.log("[Obsidian] Connected to wallet:", account.getAddress())
+    } catch (error) {
+      console.error("[Obsidian] Failed to connect:", error)
+      alert("Failed to connect to Obsidian wallet. Make sure the wallet is open.")
+    } finally {
+      setIsConnectingWallet(false)
+    }
+  }
+
+  const handleSubmitTransaction = async () => {
+    if (!obsidianAccount) {
+      alert("Please connect your Obsidian wallet first")
+      return
+    }
+
+    if (!contractAddress.trim()) {
+      alert("Please enter the contract address")
+      return
+    }
+
+    if (!followerAmount.trim()) {
+      alert("Please enter the follower amount")
+      return
+    }
+
+    if (!followerOwner.trim()) {
+      alert("Please enter the follower owner address")
+      return
+    }
+
+    setIsSubmittingTx(true)
+    setTxResult(null)
+
+    try {
+      // Connect to the Counter contract
+      const counter = await CounterContract.at(
+        contractAddress as any,
+        obsidianAccount
+      )
+
+      // Submit the transaction
+      console.log("[Obsidian] Submitting transaction...")
+      const tx = counter.methods
+        .add_follower_note(BigInt(followerAmount), followerOwner as any)
+        .send()
+
+      const receipt = await tx.wait({ timeout: 200000 })
+
+      console.log("[Obsidian] Transaction successful:", receipt.txHash)
+      setTxResult(`Transaction successful! Hash: ${receipt.txHash.toString()}`)
+
+      // Clear form
+      setFollowerAmount("")
+      setFollowerOwner("")
+    } catch (error) {
+      console.error("[Obsidian] Transaction failed:", error)
+      setTxResult(`Transaction failed: ${error instanceof Error ? error.message : "Unknown error"}`)
+    } finally {
+      setIsSubmittingTx(false)
+    }
+  }
+
   return (
     <div className="min-h-screen text-foreground antialiased selection:bg-primary/10 selection:text-primary pb-20 font-sans">
       <AztecBackground /> {/* Add the background component */}
@@ -344,6 +427,95 @@ export default function NostrClient() {
                     </Button>
                   </div>
                 </div>
+
+                <section className="rounded-xl border border-border/50 bg-card p-5 shadow-sm space-y-4 mt-6 max-w-[640px] mx-auto">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground mb-2">
+                      🔮 Obsidian Wallet - Counter Contract
+                    </h3>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Connect to Obsidian wallet and submit transactions to the Counter contract
+                    </p>
+                  </div>
+
+                  {!obsidianAccount ? (
+                    <Button
+                      onClick={handleConnectWallet}
+                      disabled={isConnectingWallet}
+                      className="w-full font-medium"
+                    >
+                      {isConnectingWallet ? "Connecting..." : "Connect Obsidian Wallet"}
+                    </Button>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 px-3 py-2 rounded-md">
+                        <span>✓</span>
+                        <span>Connected: {obsidianAccount.getAddress().toString().substring(0, 20)}...</span>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-2">
+                            Contract Address
+                          </label>
+                          <input
+                            type="text"
+                            value={contractAddress}
+                            onChange={(e) => setContractAddress(e.target.value)}
+                            placeholder="Enter Counter contract address"
+                            className="w-full rounded-lg border bg-background px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:border-ring transition-all"
+                            disabled={isSubmittingTx}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-2">
+                            Follower Amount (Field)
+                          </label>
+                          <input
+                            type="text"
+                            value={followerAmount}
+                            onChange={(e) => setFollowerAmount(e.target.value)}
+                            placeholder="Enter amount (e.g., 42)"
+                            className="w-full rounded-lg border bg-background px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:border-ring transition-all"
+                            disabled={isSubmittingTx}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-2">
+                            Owner Address (AztecAddress)
+                          </label>
+                          <input
+                            type="text"
+                            value={followerOwner}
+                            onChange={(e) => setFollowerOwner(e.target.value)}
+                            placeholder="Enter Aztec address"
+                            className="w-full rounded-lg border bg-background px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:border-ring transition-all"
+                            disabled={isSubmittingTx}
+                          />
+                        </div>
+
+                        <Button
+                          onClick={handleSubmitTransaction}
+                          disabled={isSubmittingTx || !contractAddress.trim() || !followerAmount.trim() || !followerOwner.trim()}
+                          className="w-full font-medium"
+                        >
+                          {isSubmittingTx ? "Submitting Transaction..." : "Submit add_follower_note"}
+                        </Button>
+
+                        {txResult && (
+                          <div className={`mt-4 p-3 rounded-md text-xs ${txResult.includes("successful")
+                              ? "bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300"
+                              : "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"
+                            }`}>
+                            {txResult}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </section>
               </div>
             ) : (
               <>

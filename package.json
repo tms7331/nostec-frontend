@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint ."
@@ -60,7 +60,8 @@
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
-    "zod": "3.25.76"
+    "zod": "3.25.76",
+    "@nemi-fi/wallet-sdk": "github:nemi-fi/wallet-sdk#3.0.0-devnet.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.9",
